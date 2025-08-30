@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  echo "Usage: $0 <command> [options]"
+  echo ""
+  echo "Commands:"
+  echo "  build    Build glibc images"
+  echo "  export   Export built glibc from container to host"
+  echo ""
+  echo "Build Options:"
+  echo "  --version <version>   Build the specific glibc version."
+  echo "  --arch <arch>         x86_64, i686, or both"
+  echo "  --tag <name:tag>      Optional image name (default: glibc:<GLIBC_VERSION>)"
+  echo "  --proxy-port <port>   Optional proxy port, host IP auto-detected."
+  echo ""
+  echo "Export Options:"
+  echo "  --version <version>   Export the specific glibc built binaries to /opt/glibc directory."
+  echo "  --arch <arch>         x86_64, i686, or both"
+  echo "  --tag <name:tag>      Optional image name (default: glibc:<GLIBC_VERSION>)"
+  exit 1
+}
+
+COMMAND="${1:-}"
+if [[ -z "$COMMAND" ]]; then
+  usage
+fi
+shift
+
+IMAGE_TAG=""
+PROXY_PORT=""
+GLIBC_VERSION=""
+ARCH=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+  --version)
+    GLIBC_VERSION="${2:?Missing value for --version}"
+    shift 2
+    ;;
+  --arch)
+    ARCH="${2:?Missing value for --arch}"
+    shift 2
+    ;;
+  --tag)
+    IMAGE_TAG="$2"
+    shift 2
+    ;;
+  --proxy-port)
+    PROXY_PORT="$2"
+    shift 2
+    ;;
+  --help)
+    usage
+    ;;
+  *)
+    echo "Unknown option: $1"
+    usage
+    ;;
+  esac
+done
+
+if [ -z "$GLIBC_VERSION" ]; then
+  echo "Missing --version"
+  usage
+fi
+
+if [ -z "$ARCH" ]; then
+  echo "Missing --arch"
+  usage
+fi
+
+if [ -z "$IMAGE_TAG" ]; then
+  IMAGE_TAG="glibc:${GLIBC_VERSION}"
+fi
+
+case "$COMMAND" in
+build)
+  TARGETS=()
+  case "$ARCH" in
+  x86_64) TARGETS+=(builder-x86_64) ;;
+  i686) TARGETS+=(builder-i686) ;;
+  both) TARGETS+=(builder-x86_64 builder-i686) ;;
+  *)
+    echo "Unsupported arch: $ARCH"
+    usage
+    ;;
+  esac
+
+  PROXY_ARGS=()
+  if [ -n "$PROXY_PORT" ]; then
+    PROXY_IP=$(ip -4 route get 8.8.8.8 2>/dev/null | awk '{print $7; exit}')
+    if [ -z "$PROXY_IP" ]; then
+      PROXY_IP=$(hostname -i 2>/dev/null | awk '{print $1}')
+    fi
+
+    if [ -z "$PROXY_IP" ]; then
+      echo "[-] Cannot detect host IP"
+      exit 1
+    fi
+
+    PROXY_URL="http://${PROXY_IP}:${PROXY_PORT}"
+    PROXY_ARGS=(
+      --build-arg "http_proxy=$PROXY_URL"
+      --build-arg "https_proxy=$PROXY_URL"
+      --build-arg "HTTP_PROXY=$PROXY_URL"
+      --build-arg "HTTPS_PROXY=$PROXY_URL"
+      --build-arg "NO_PROXY=localhost,127.0.0.0/8"
+    )
+    echo "[*] Using proxy $PROXY_URL"
+  fi
+
+  for TARGET in "${TARGETS[@]}"; do
+    echo "[*] Building target: $TARGET ..."
+    docker build \
+      "${PROXY_ARGS[@]}" \
+      --build-arg "GLIBC_VERSION=${GLIBC_VERSION}" \
+      --target "$TARGET" \
+      -t "${IMAGE_TAG}-${TARGET}" \
+      .
+  done
+
+  TMP_DF="$(mktemp --tmpdir Dockerfile.yield.XXXX)"
+  trap 'rm -f "${TMP_DF:-}"' EXIT
+
+  cat >"${TMP_DF}" <<EOF
+FROM scratch
+ARG GLIBC_VERSION
+ENV GLIBC_VERSION=\${GLIBC_VERSION}
+LABEL maintainer="CuB3y0nd <root@cubeyond.net>"
+EOF
+
+  for T in "${TARGETS[@]}"; do
+    case "$T" in
+    builder-x86_64)
+      echo "COPY --from=${IMAGE_TAG}-${T} /opt/glibc/${GLIBC_VERSION}/64 /opt/glibc/${GLIBC_VERSION}/64" >>"${TMP_DF}"
+      ;;
+    builder-i686)
+      echo "COPY --from=${IMAGE_TAG}-${T} /opt/glibc/${GLIBC_VERSION}/32 /opt/glibc/${GLIBC_VERSION}/32" >>"${TMP_DF}"
+      ;;
+    esac
+  done
+
+  echo "[*] Building final combined image: $IMAGE_TAG-$ARCH ..."
+  docker build \
+    --build-arg "GLIBC_VERSION=${GLIBC_VERSION}" \
+    -f "${TMP_DF}" \
+    -t "${IMAGE_TAG}-${ARCH}" \
+    .
+
+  rm -f "${TMP_DF}"
+
+  for TARGET in "${TARGETS[@]}"; do
+    echo "[*] Removing temp image: ${IMAGE_TAG}-${TARGET}"
+    docker rmi -f "${IMAGE_TAG}-${TARGET}" >/dev/null 2>&1 || true
+  done
+
+  echo "[+] Final combined image built: ${IMAGE_TAG}-${ARCH}"
+  ;;
+
+export)
+  HOST_ROOT="/opt/glibc"
+  HOST_DIR="${HOST_ROOT}/${GLIBC_VERSION}"
+
+  echo "[*] Exporting glibc-${GLIBC_VERSION} (${ARCH}) to ${HOST_DIR}"
+  mkdir -p "${HOST_ROOT}"
+
+  if ! docker image inspect "${IMAGE_TAG}-${ARCH}" >/dev/null 2>&1; then
+    echo "[-] Image not found: ${IMAGE_TAG}-${ARCH}, please build first."
+    usage
+  fi
+
+  # Always pass a dummy command for scratch-based images. `docker create`
+  # doesn't verify command existence unless container is started.
+  CID=$(docker create "${IMAGE_TAG}-${ARCH}" /bin/true)
+
+  case "$ARCH" in
+  x86_64 | i686 | both)
+    docker cp "${CID}:/opt/glibc/${GLIBC_VERSION}" "${HOST_ROOT}"
+    ;;
+  *)
+    # This branch should never be hit because ARCH is validated earlier.
+    echo "Unsupported arch in export: $ARCH"
+    docker rm "${CID}" >/dev/null
+    exit 1
+    ;;
+  esac
+
+  docker rm "${CID}" >/dev/null
+
+  echo "[+] Export completed to ${HOST_DIR}"
+  ;;
+
+*)
+  echo "Unknown command: $COMMAND"
+  usage
+  ;;
+esac

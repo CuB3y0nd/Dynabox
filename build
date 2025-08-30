@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+: "${GLIBC_VERSION:?[-] Must set GLIBC_VERSION (e.g. --build-arg GLIBC_VERSION=2.23)}"
+
+URL="https://ftpmirror.gnu.org/libc/glibc-${GLIBC_VERSION}.tar.xz"
+SIG="${URL}.sig"
+TAR="glibc-${GLIBC_VERSION}.tar.xz"
+WORKDIR="/tmp/glibc-${GLIBC_VERSION}-build"
+
+mkdir -p "${WORKDIR}"
+cd "${WORKDIR}"
+
+echo "[*] Downloading gnu-keyring ..."
+wget -q -O- "https://ftpmirror.gnu.org/gnu/gnu-keyring.gpg" | gpg --import || {
+  echo "[!] GPG import returned non-zero, ignored"
+}
+
+echo "[*] Downloading glibc-${GLIBC_VERSION} ..."
+wget -q "${URL}" -O "${TAR}" --show-progress
+wget -q "${SIG}" -O "${TAR}.sig"
+
+echo "[*] Verifying signature ..."
+gpg --verify "${TAR}.sig" || {
+  echo "[-] Signature verification failed"
+  exit 1
+}
+
+echo "[*] Extracting ..."
+tar -Jxf "${TAR}"
+cd "glibc-${GLIBC_VERSION}"
+
+build() {
+  local bits=$1
+  local host=$2
+  local prefix="/opt/glibc/${GLIBC_VERSION}/${bits}"
+  local builddir="build-${bits}"
+
+  echo "[*] Prepare build dir ..."
+  rm -rf "$builddir"
+  mkdir -p "$builddir"
+  pushd "$builddir" >/dev/null
+
+  echo "[*] Configuring for ${bits}-bit ..."
+  ../configure \
+    --prefix="$prefix" \
+    --disable-werror \
+    --enable-debug=yes \
+    --host="$host"
+
+  echo "[*] Building for ${bits}-bit ..."
+  make -j"$(nproc)"
+
+  echo "[*] Installing to $prefix ..."
+  make install
+
+  popd >/dev/null
+  echo "[+] Done ${bits}-bit build"
+}
+
+case "${ARCH}" in
+x86_64)
+  build "64" "x86_64-linux-gnu"
+  ;;
+i686)
+  build "32" "i686-linux-gnu"
+  ;;
+*)
+  echo "[-] Unsupported architecture: ${ARCH}"
+  exit 1
+  ;;
+esac
+
+echo "[*] Cleaning up ..."
+cd /
+rm -rf "$WORKDIR"
+
+echo "[+] Finished"
