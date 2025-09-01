@@ -14,7 +14,7 @@ This project is built for hackers, researchers, and anyone who hates the words:
 - (Optional but highly recommended) [Docker Buildx plugin](https://docs.docker.com/build/concepts/overview/#install-buildx) — it's modern, faster, and makes multi-arch builds less painful.
 - I have only tested things with buildx plugin so... ~*I suggest you do the same xD*~
 
-## What is Dynabox?
+## What is Dynabox ?
 
 When you're debugging binaries on Linux, one of the biggest headaches is **glibc mismatch**:
 
