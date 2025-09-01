@@ -11,7 +11,7 @@ This project is built for hackers, researchers, and anyone who hates the words:
 ## Prerequisites
 
 - **Docker** is required, but you don't have to know how to use it. No Docker, no party.
-- (Optional but highly recommended) **Docker Buildx plugin** — it's modern, faster, and makes multi-arch builds less painful.
+- (Optional but highly recommended) [Docker Buildx plugin](https://docs.docker.com/build/concepts/overview/#install-buildx) — it's modern, faster, and makes multi-arch builds less painful.
 - I have only tested things with buildx plugin so... ~*I suggest you do the same xD*~
 
 ## What is Dynabox?
