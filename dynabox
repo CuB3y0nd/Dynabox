@@ -6,8 +6,8 @@ usage() {
   echo "Usage: $0 <command> [options]"
   echo ""
   echo "Commands:"
-  echo "  build    Build glibc images"
-  echo "  export   Export built glibc from container to host"
+  echo "  build    Build glibc images."
+  echo "  export   Export built glibc from container to host."
   echo ""
   echo "Build Options:"
   echo "  --version <version>   Build the specific glibc version."
@@ -30,53 +30,54 @@ shift
 
 IMAGE_TAG=""
 PROXY_PORT=""
-GLIBC_VERSION=""
-ARCH=""
-
-while [[ $# -gt 0 ]]; do
-  case $1 in
-  --version)
-    GLIBC_VERSION="${2:?Missing value for --version}"
-    shift 2
-    ;;
-  --arch)
-    ARCH="${2:?Missing value for --arch}"
-    shift 2
-    ;;
-  --tag)
-    IMAGE_TAG="$2"
-    shift 2
-    ;;
-  --proxy-port)
-    PROXY_PORT="$2"
-    shift 2
-    ;;
-  --help)
-    usage
-    ;;
-  *)
-    echo "Unknown option: $1"
-    usage
-    ;;
-  esac
-done
-
-if [ -z "$GLIBC_VERSION" ]; then
-  echo "Missing --version"
-  usage
-fi
-
-if [ -z "$ARCH" ]; then
-  echo "Missing --arch"
-  usage
-fi
-
-if [ -z "$IMAGE_TAG" ]; then
-  IMAGE_TAG="glibc:${GLIBC_VERSION}"
-fi
 
 case "$COMMAND" in
 build)
+  GLIBC_VERSION=""
+  ARCH=""
+
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+    --version)
+      GLIBC_VERSION="${2:?Missing value for --version}"
+      shift 2
+      ;;
+    --arch)
+      ARCH="${2:?Missing value for --arch}"
+      shift 2
+      ;;
+    --tag)
+      IMAGE_TAG="${2:?Missing value for --tag}"
+      shift 2
+      ;;
+    --proxy-port)
+      PROXY_PORT="${2:?Missing value for --proxy-port}"
+      shift 2
+      ;;
+    --help)
+      usage
+      ;;
+    *)
+      echo "Unknown option: $1"
+      usage
+      ;;
+    esac
+  done
+
+  if [ -z "$GLIBC_VERSION" ]; then
+    echo "Missing --version"
+    usage
+  fi
+
+  if [ -z "$ARCH" ]; then
+    echo "Missing --arch"
+    usage
+  fi
+
+  if [ -z "$IMAGE_TAG" ]; then
+    IMAGE_TAG="glibc:${GLIBC_VERSION}"
+  fi
+
   TARGETS=()
   case "$ARCH" in
   x86_64) TARGETS+=(builder-x86_64) ;;
@@ -89,7 +90,7 @@ build)
   esac
 
   PROXY_ARGS=()
-  if [ -n "$PROXY_PORT" ]; then
+  if [ -n "${PROXY_PORT}" ]; then
     PROXY_IP=$(ip -4 route get 8.8.8.8 2>/dev/null | awk '{print $7; exit}')
     if [ -z "$PROXY_IP" ]; then
       PROXY_IP=$(hostname -i 2>/dev/null | awk '{print $1}')
@@ -160,6 +161,47 @@ EOF
   ;;
 
 export)
+  GLIBC_VERSION=""
+  ARCH=""
+
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+    --version)
+      GLIBC_VERSION="${2:?Missing value for --version}"
+      shift 2
+      ;;
+    --arch)
+      ARCH="${2:?Missing value for --arch}"
+      shift 2
+      ;;
+    --tag)
+      IMAGE_TAG="${2:?Missing value for --tag}"
+      shift 2
+      ;;
+    --help)
+      usage
+      ;;
+    *)
+      echo "Unknown option: $1"
+      usage
+      ;;
+    esac
+  done
+
+  if [ -z "$GLIBC_VERSION" ]; then
+    echo "Missing --version"
+    usage
+  fi
+
+  if [ -z "$ARCH" ]; then
+    echo "Missing --arch"
+    usage
+  fi
+
+  if [ -z "$IMAGE_TAG" ]; then
+    IMAGE_TAG="glibc:${GLIBC_VERSION}"
+  fi
+
   HOST_ROOT="/opt/glibc"
   HOST_DIR="${HOST_ROOT}/${GLIBC_VERSION}"
 
