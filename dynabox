@@ -6,19 +6,26 @@ usage() {
   echo "Usage: $0 <command> [options]"
   echo ""
   echo "Commands:"
-  echo "  build    Build glibc images."
-  echo "  export   Export built glibc from container to host."
+  echo "  build                       Build glibc images."
+  echo "  export                      Export built glibc from container to host."
+  echo "  compile                     Compile with the specific architecture and glibc version."
   echo ""
   echo "Build Options:"
-  echo "  --version <version>   Build the specific glibc version."
-  echo "  --arch <arch>         x86_64, i686, or both"
-  echo "  --tag <name:tag>      Optional image name (default: glibc:<GLIBC_VERSION>)"
-  echo "  --proxy-port <port>   Optional proxy port, host IP auto-detected."
+  echo "  --version <version>         Build the specific glibc version."
+  echo "  --arch <arch>               x86_64, i686, or both"
+  echo "  --tag <name:tag>            Optional image name (default: glibc:<GLIBC_VERSION>)"
+  echo "  --proxy-port <port>         Optional proxy port, host IP auto-detected."
   echo ""
   echo "Export Options:"
-  echo "  --version <version>   Export the specific glibc built binaries to /opt/glibc directory."
-  echo "  --arch <arch>         x86_64, i686, or both"
-  echo "  --tag <name:tag>      Optional image name (default: glibc:<GLIBC_VERSION>)"
+  echo "  --version <version>         Export the specific glibc built binaries to /opt/glibc directory."
+  echo "  --arch <arch>               x86_64, i686, or both"
+  echo "  --tag <name:tag>            Optional image name (default: glibc:<GLIBC_VERSION>)"
+  echo ""
+  echo "Compile Options:"
+  echo "  <file>                      <file> is C source code which would be compiled."
+  echo "  -o, --output <file>         Place the output into <file>."
+  echo "  -a, --arch <arch>           Target bits: 64 or 32 (default: host arch)."
+  echo "  -v, --version <version>     Version of glibc you want to use to compile (default: system glibc)."
   exit 1
 }
 
@@ -209,7 +216,7 @@ export)
   mkdir -p "${HOST_ROOT}"
 
   if ! docker image inspect "${IMAGE_TAG}-${ARCH}" >/dev/null 2>&1; then
-    echo "[-] Image not found: ${IMAGE_TAG}-${ARCH}, please build first."
+    echo "[-] Image not found: ${IMAGE_TAG}-${ARCH}, please build it first."
     usage
   fi
 
@@ -232,6 +239,112 @@ export)
   docker rm "${CID}" >/dev/null
 
   echo "[+] Export completed to ${HOST_DIR}"
+  ;;
+
+compile)
+  SRC=""
+  OUT=""
+  TARGET_BITS=""
+  GLIBC_VER=""
+
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+    -o | --output)
+      OUT="${2:?Missing value for -o, --output}"
+      shift 2
+      ;;
+    -a | --arch)
+      TARGET_BITS="${2:?Missing value for -a, --arch (32 or 64)}"
+      shift 2
+      ;;
+    -v | --version)
+      GLIBC_VER="${2:?Missing value for -v, --version}"
+      shift 2
+      ;;
+    --help)
+      usage
+      ;;
+    -*)
+      echo "Unknown option for compile: $1"
+      usage
+      ;;
+    *)
+      if [ -z "$SRC" ]; then
+        SRC="$1"
+      else
+        echo "Unexpected positional argument: $1"
+        usage
+      fi
+      shift
+      ;;
+    esac
+  done
+
+  if [ -z "$SRC" ]; then
+    echo "Missing source file for compile"
+    usage
+  fi
+
+  if [ -z "$OUT" ]; then
+    # default output: source filename without extend name
+    OUT="$(basename "$SRC")"
+    OUT="${OUT%.c}"
+  fi
+
+  # determine target bits if not specified
+  if [ -z "$TARGET_BITS" ]; then
+    HOST_ARCH="$(uname -m)"
+    case "$HOST_ARCH" in
+    x86_64 | amd64) TARGET_BITS="64" ;;
+    i386 | i486 | i586 | i686) TARGET_BITS="32" ;;
+    *)
+      echo "Cannot determine host arch ($HOST_ARCH). Please pass -a 32|64."
+      exit 1
+      ;;
+    esac
+  fi
+
+  if [[ "$TARGET_BITS" != "32" && "$TARGET_BITS" != "64" ]]; then
+    echo "Invalid -a, --arch value: ${TARGET_BITS}. Use 32 or 64."
+    exit 1
+  fi
+
+  # find glibc path if requested
+  if [ -n "${GLIBC_VER:-}" ]; then
+    GLIBC_PATH="/opt/glibc/${GLIBC_VER}/${TARGET_BITS}"
+    if [ ! -d "$GLIBC_PATH" ]; then
+      echo "Requested glibc path not found: ${GLIBC_PATH}, please build it first."
+      usage
+    fi
+  else
+    GLIBC_PATH=""
+  fi
+
+  echo "[*] Compiling $SRC -> $OUT (bits=${TARGET_BITS}, glibc=${GLIBC_VER:-system})"
+
+  GCC_CMD=(gcc -Wall "$SRC" -o "$OUT")
+  if [ "$TARGET_BITS" = "32" ]; then
+    GCC_CMD+=(-m32)
+  fi
+
+  if [ -n "$GLIBC_PATH" ]; then
+    if [ "$TARGET_BITS" = "64" ]; then
+      DYN_LINKER="${GLIBC_PATH}/lib/ld-linux-x86-64.so.2"
+    else
+      DYN_LINKER="${GLIBC_PATH}/lib/ld-linux.so.2"
+    fi
+
+    GCC_CMD+=(-B "${GLIBC_PATH}/lib")
+    GCC_CMD+=(-L "${GLIBC_PATH}/lib")
+    GCC_CMD+=(-I "${GLIBC_PATH}/include")
+    GCC_CMD+=("-Wl,--rpath=${GLIBC_PATH}/lib")
+    GCC_CMD+=("-Wl,--dynamic-linker=${DYN_LINKER}")
+  fi
+
+  echo "[+] Running: ${GCC_CMD[*]}"
+  "${GCC_CMD[@]}"
+
+  echo "[+] Compile finished: ./${OUT}"
   ;;
 
 *)
