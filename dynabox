@@ -26,6 +26,7 @@ usage() {
   echo "  -o, --output <file>         Place the output into <file>."
   echo "  -a, --arch <arch>           Target bits: 64 or 32 (default: host arch)."
   echo "  -v, --version <version>     Version of glibc you want to use to compile (default: system glibc)."
+  echo "  -- <extra args>             Append extra args (e.g., -- -lpthread)."
   exit 1
 }
 
@@ -283,6 +284,11 @@ compile)
       GLIBC_VER="${2:?Missing value for -v, --version}"
       shift 2
       ;;
+    --)
+      shift
+      EXTRA_ARGS=("$@")
+      break
+      ;;
     --help)
       usage
       ;;
@@ -318,7 +324,7 @@ compile)
     HOST_ARCH="$(uname -m)"
     case "$HOST_ARCH" in
     x86_64 | amd64) TARGET_BITS="64" ;;
-    i386 | i486 | i586 | i686) TARGET_BITS="32" ;;
+    i486 | i586 | i686 | i786) TARGET_BITS="32" ;;
     *)
       echo "Cannot determine host arch ($HOST_ARCH). Please pass -a 32|64."
       exit 1
@@ -362,6 +368,9 @@ compile)
     GCC_CMD+=("-Wl,--rpath=${GLIBC_PATH}/lib")
     GCC_CMD+=("-Wl,--dynamic-linker=${DYN_LINKER}")
   fi
+
+  # append extra user-provided args (e.g., -lpthread)
+  GCC_CMD+=("${EXTRA_ARGS[@]}")
 
   echo "[+] Running: ${GCC_CMD[*]}"
   "${GCC_CMD[@]}"
