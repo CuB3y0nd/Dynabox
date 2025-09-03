@@ -87,9 +87,31 @@ build)
 
   TARGETS=()
   case "$ARCH" in
-  x86_64) TARGETS+=(builder-x86_64) ;;
-  i686) TARGETS+=(builder-i686) ;;
-  both) TARGETS+=(builder-x86_64 builder-i686) ;;
+  x86_64)
+    TARGETS+=(builder-x86_64)
+    ;;
+  i686)
+    # decide xenial or bionic by GLIBC_VERSION
+    GLIBC_MAJOR=$(echo "$GLIBC_VERSION" | cut -d. -f1)
+    GLIBC_MINOR=$(echo "$GLIBC_VERSION" | cut -d. -f2)
+
+    if ((GLIBC_MAJOR == 2 && GLIBC_MINOR <= 25)); then
+      TARGETS+=(builder-i686-xenial)
+    else
+      TARGETS+=(builder-i686-bionic)
+    fi
+    ;;
+  both)
+    TARGETS+=(builder-x86_64)
+    GLIBC_MAJOR=$(echo "$GLIBC_VERSION" | cut -d. -f1)
+    GLIBC_MINOR=$(echo "$GLIBC_VERSION" | cut -d. -f2)
+
+    if ((GLIBC_MAJOR == 2 && GLIBC_MINOR <= 25)); then
+      TARGETS+=(builder-i686-xenial)
+    else
+      TARGETS+=(builder-i686-bionic)
+    fi
+    ;;
   *)
     echo "Unsupported arch: $ARCH"
     usage

@@ -16,7 +16,25 @@ COPY build /root/build
 
 RUN chmod +x /root/build && /root/build
 
-FROM --platform=linux/386 i386/ubuntu:xenial AS builder-i686
+FROM --platform=linux/386 ubuntu:xenial AS builder-i686-xenial
+
+ARG GLIBC_VERSION
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    GLIBC_VERSION=${GLIBC_VERSION} \
+    ARCH=i686
+
+RUN apt-get update && \
+    apt-get install -y \
+        make gcc binutils gawk bison perl python3 wget gnupg xz-utils && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY build /root/build
+
+RUN chmod +x /root/build && /root/build
+
+FROM --platform=linux/386 i386/ubuntu:bionic AS builder-i686-bionic
 
 ARG GLIBC_VERSION
 
