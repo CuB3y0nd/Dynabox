@@ -43,11 +43,19 @@ build() {
   pushd "$builddir" >/dev/null
 
   echo "[*] Configuring for ${bits}-bit ..."
-  ../configure \
-    --prefix="$prefix" \
-    --disable-werror \
-    --enable-debug=yes \
+  cmd=(../configure
+    --prefix="$prefix"
+    --disable-werror
+    --enable-debug=yes
     --host="$host"
+  )
+
+  # Only enable CET for 64-bit builds.
+  if [ "$bits" = "64" ]; then
+    cmd+=(--enable-cet)
+  fi
+
+  "${cmd[@]}"
 
   echo "[*] Building for ${bits}-bit ..."
   make -j"$(nproc)"
