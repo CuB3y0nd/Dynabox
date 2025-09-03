@@ -119,11 +119,23 @@ git clone https://github.com/bminor/glibc.git && cd glibc
 git checkout glibc-<version>
 ```
 
-Now, make sure you know the path to the glibc source code root. When debugging a binary in `gdb`:
+Now, make sure you know the path to the glibc source code root path. When debugging a binary in `gdb`:
 
 ```bash
-# Set the source path for glibc
-dir /path/to/glibc
+# Get the compilation directory path
+info source
+
+# Output may like this:
+# Compilation directory is /tmp/glibc-2.29-build/glibc-2.29/io
+#
+# You just need truncate this path to /tmp/glibc-2.29-build/glibc-2.29
+
+# Enable load source code from /opt/glibc
+set auto-load safe-path /opt/glibc
+
+# Substitute the source path for glibc
+# For example, set substitute-path /tmp/glibc-2.29-build/glibc-2.29 /glibc
+set substitute-path <compilation directory path> </path/to/glibc>
 ```
 
 From here, step into glibc functions, inspect variables, and enjoy source-level debugging.
